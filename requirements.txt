@@ -6,3 +6,9 @@ google-cloud-aiplatform>=1.25.0
 google-genai>=1.9.0
 python-dotenv>=1.0.0
 pathspec>=0.11.0
+
+streamlit>=1.28.0
+streamlit-ace>=0.1.1
+google-generativeai>=0.3.0
+python-dotenv>=1.0.0    
+gitpython>=3.1.0

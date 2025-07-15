@@ -1,235 +1,244 @@
-from google import genai
 import os
+import google.generativeai as genai
+from google.generativeai import GenerationConfig
+import time
 import logging
-import json
-from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 # Configure logging
-log_directory = os.getenv("LOG_DIR", "logs")
-os.makedirs(log_directory, exist_ok=True)
-log_file = os.path.join(
-    log_directory, f"llm_calls_{datetime.now().strftime('%Y%m%d')}.log"
-)
-
-# Set up logger
-logger = logging.getLogger("llm_logger")
-logger.setLevel(logging.INFO)
-logger.propagate = False  # Prevent propagation to root logger
-file_handler = logging.FileHandler(log_file, encoding='utf-8')
-file_handler.setFormatter(
-    logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-)
-logger.addHandler(file_handler)
-
-# Simple cache configuration
-cache_file = "llm_cache.json"
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 
-# By default, we Google Gemini 2.5 pro, as it shows great performance for code understanding
-def call_llm(prompt: str, use_cache: bool = True) -> str:
-    # Log the prompt
-    logger.info(f"PROMPT: {prompt}")
+# Initialize Gemini client
+def initialize_gemini():
+    """Initialize Gemini AI client"""
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        raise ValueError("GEMINI_API_KEY environment variable is required")
 
-    # Check cache if enabled
-    if use_cache:
-        # Load cache from disk
-        cache = {}
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    cache = json.load(f)
-            except:
-                logger.warning(f"Failed to load cache, starting with empty cache")
+    genai.configure(api_key=api_key)
 
-        # Return from cache if exists
-        if prompt in cache:
-            logger.info(f"RESPONSE: {cache[prompt]}")
-            return cache[prompt]
+    # Try different available models
+    model_names = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-1.0-pro", "gemini-pro"]
 
-    # # Call the LLM if not in cache or cache disabled
-    # client = genai.Client(
-    #     vertexai=True,
-    #     # TODO: change to your own project id and location
-    #     project=os.getenv("GEMINI_PROJECT_ID", "your-project-id"),
-    #     location=os.getenv("GEMINI_LOCATION", "us-central1")
-    # )
-
-    # You can comment the previous line and use the AI Studio key instead:
-    client = genai.Client(
-        api_key=os.getenv("GEMINI_API_KEY", ""),
-    )
-    model = os.getenv("GEMINI_MODEL", "gemini-2.5-pro-exp-03-25")
-    # model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-preview-04-17")
-    
-    response = client.models.generate_content(model=model, contents=[prompt])
-    response_text = response.text
-
-    # Log the response
-    logger.info(f"RESPONSE: {response_text}")
-
-    # Update cache if enabled
-    if use_cache:
-        # Load cache again to avoid overwrites
-        cache = {}
-        if os.path.exists(cache_file):
-            try:
-                with open(cache_file, "r", encoding="utf-8") as f:
-                    cache = json.load(f)
-            except:
-                pass
-
-        # Add to cache and save
-        cache[prompt] = response_text
+    for model_name in model_names:
         try:
-            with open(cache_file, "w", encoding="utf-8") as f:
-                json.dump(cache, f)
+            model = genai.GenerativeModel(model_name)
+            logger.info(f"Successfully initialized with model: {model_name}")
+            return model
         except Exception as e:
-            logger.error(f"Failed to save cache: {e}")
+            logger.warning(f"Failed to initialize {model_name}: {e}")
+            continue
 
-    return response_text
+    raise ValueError("No available Gemini models found")
 
 
-# # Use Azure OpenAI
-# def call_llm(prompt, use_cache: bool = True):
-#     from openai import AzureOpenAI
+# Global client instance
+try:
+    client = initialize_gemini()
+    logger.info("Gemini client initialized successfully")
+except Exception as e:
+    logger.error(f"Failed to initialize Gemini client: {e}")
+    client = None
 
-#     endpoint = "https://<azure openai name>.openai.azure.com/"
-#     deployment = "<deployment name>"
 
-#     subscription_key = "<azure openai key>"
-#     api_version = "<api version>"
+def call_llm(prompt, max_tokens=4000, temperature=0.7, max_retries=3):
+    """
+    Call Gemini LLM with the given prompt
 
-#     client = AzureOpenAI(
-#         api_version=api_version,
-#         azure_endpoint=endpoint,
-#         api_key=subscription_key,
-#     )
+    Args:
+        prompt (str): The input prompt
+        max_tokens (int): Maximum tokens in response
+        temperature (float): Temperature for response generation
+        max_retries (int): Maximum number of retry attempts
 
-#     r = client.chat.completions.create(
-#         model=deployment,
-#         messages=[{"role": "user", "content": prompt}],
-#         response_format={
-#             "type": "text"
-#         },
-#         max_completion_tokens=40000,
-#         reasoning_effort="medium",
-#         store=False
-#     )
-#     return r.choices[0].message.content
+    Returns:
+        str: The generated response
+    """
+    if client is None:
+        raise RuntimeError("Gemini client is not initialized")
 
-# # Use Anthropic Claude 3.7 Sonnet Extended Thinking
-# def call_llm(prompt, use_cache: bool = True):
-#     from anthropic import Anthropic
-#     client = Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY", "your-api-key"))
-#     response = client.messages.create(
-#         model="claude-3-7-sonnet-20250219",
-#         max_tokens=21000,
-#         thinking={
-#             "type": "enabled",
-#             "budget_tokens": 20000
-#         },
-#         messages=[
-#             {"role": "user", "content": prompt}
-#         ]
-#     )
-#     return response.content[1].text
+    generation_config = GenerationConfig(
+        max_output_tokens=max_tokens, temperature=temperature, top_p=0.8, top_k=40
+    )
 
-# # Use OpenAI o1
-# def call_llm(prompt, use_cache: bool = True):
-#     from openai import OpenAI
-#     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY", "your-api-key"))
-#     r = client.chat.completions.create(
-#         model="o1",
-#         messages=[{"role": "user", "content": prompt}],
-#         response_format={
-#             "type": "text"
-#         },
-#         reasoning_effort="medium",
-#         store=False
-#     )
-#     return r.choices[0].message.content
+    for attempt in range(max_retries):
+        try:
+            response = client.generate_content(
+                prompt, generation_config=generation_config
+            )
 
-# Use OpenRouter API
-# def call_llm(prompt: str, use_cache: bool = True) -> str:
-#     import requests
-#     # Log the prompt
-#     logger.info(f"PROMPT: {prompt}")
+            if response.text:
+                return response.text.strip()
+            else:
+                logger.warning(f"Empty response on attempt {attempt + 1}")
 
-#     # Check cache if enabled
-#     if use_cache:
-#         # Load cache from disk
-#         cache = {}
-#         if os.path.exists(cache_file):
-#             try:
-#                 with open(cache_file, "r", encoding="utf-8") as f:
-#                     cache = json.load(f)
-#             except:
-#                 logger.warning(f"Failed to load cache, starting with empty cache")
+        except Exception as e:
+            logger.error(f"Attempt {attempt + 1} failed: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(2**attempt)  # Exponential backoff
+            else:
+                raise RuntimeError(
+                    f"Failed to get response after {max_retries} attempts: {e}"
+                )
 
-#         # Return from cache if exists
-#         if prompt in cache:
-#             logger.info(f"RESPONSE: {cache[prompt]}")
-#             return cache[prompt]
+    raise RuntimeError("Failed to generate response")
 
-#     # OpenRouter API configuration
-#     api_key = os.getenv("OPENROUTER_API_KEY", "")
-#     model = os.getenv("OPENROUTER_MODEL", "google/gemini-2.0-flash-exp:free")
-    
-#     headers = {
-#         "Authorization": f"Bearer {api_key}",
-#     }
 
-#     data = {
-#         "model": model,
-#         "messages": [{"role": "user", "content": prompt}]
-#     }
+def test_llm_connection():
+    """Test the LLM connection"""
+    try:
+        test_prompt = (
+            "Hello, please respond with 'Connection successful' if you can read this."
+        )
+        response = call_llm(test_prompt, max_tokens=50)
+        logger.info("LLM connection test successful")
+        return response
+    except Exception as e:
+        logger.error(f"LLM connection test failed: {e}")
+        raise
 
-#     response = requests.post(
-#         "https://openrouter.ai/api/v1/chat/completions",
-#         headers=headers,
-#         json=data
-#     )
 
-#     if response.status_code != 200:
-#         error_msg = f"OpenRouter API call failed with status {response.status_code}: {response.text}"
-#         logger.error(error_msg)
-#         raise Exception(error_msg)
-#     try:
-#         response_text = response.json()["choices"][0]["message"]["content"]
-#     except Exception as e:
-#         error_msg = f"Failed to parse OpenRouter response: {e}; Response: {response.text}"
-#         logger.error(error_msg)        
-#         raise Exception(error_msg)
-    
+def generate_documentation_chunk(code_content, file_path, language="English"):
+    """
+    Generate documentation for a code chunk
 
-#     # Log the response
-#     logger.info(f"RESPONSE: {response_text}")
+    Args:
+        code_content (str): The code content to document
+        file_path (str): Path to the file being documented
+        language (str): Target language for documentation
 
-#     # Update cache if enabled
-#     if use_cache:
-#         # Load cache again to avoid overwrites
-#         cache = {}
-#         if os.path.exists(cache_file):
-#             try:
-#                 with open(cache_file, "r", encoding="utf-8") as f:
-#                     cache = json.load(f)
-#             except:
-#                 pass
+    Returns:
+        str: Generated documentation
+    """
+    prompt = f"""
+    You are a technical documentation expert. Generate comprehensive documentation for the following code file.
 
-#         # Add to cache and save
-#         cache[prompt] = response_text
-#         try:
-#             with open(cache_file, "w", encoding="utf-8") as f:
-#                 json.dump(cache, f)
-#         except Exception as e:
-#             logger.error(f"Failed to save cache: {e}")
+    File: {file_path}
+    Language: {language}
 
-#     return response_text
+    Code:
+    ```
+    {code_content}
+    ```
+
+    Please provide:
+    1. A brief overview of what this code does
+    2. Key functions/classes and their purposes
+    3. Important variables and their roles
+    4. Dependencies and imports
+    5. Usage examples where applicable
+    6. Any important notes or considerations
+
+    Format the response in clear, well-structured Markdown.
+    """
+
+    return call_llm(prompt, max_tokens=3000)
+
+
+def generate_project_overview(project_structure, language="English"):
+    """
+    Generate a project overview based on the structure
+
+    Args:
+        project_structure (str): String representation of project structure
+        language (str): Target language for documentation
+
+    Returns:
+        str: Generated project overview
+    """
+    prompt = f"""
+    You are a technical documentation expert. Generate a comprehensive project overview based on the following project structure.
+
+    Language: {language}
+
+    Project Structure:
+    {project_structure}
+
+    Please provide:
+    1. Project overview and purpose
+    2. Architecture and organization
+    3. Key components and their relationships
+    4. Technology stack and dependencies
+    5. Getting started guide
+    6. Important files and directories explanation
+
+    Format the response in clear, well-structured Markdown with proper headers and sections.
+    """
+
+    return call_llm(prompt, max_tokens=4000)
+
+
+def generate_summary(documentation_parts, language="English"):
+    """
+    Generate a summary of all documentation parts
+
+    Args:
+        documentation_parts (list): List of documentation strings
+        language (str): Target language for documentation
+
+    Returns:
+        str: Generated summary
+    """
+    combined_docs = "\n\n".join(documentation_parts)
+
+    prompt = f"""
+    You are a technical documentation expert. Create a comprehensive summary and table of contents for the following documentation.
+
+    Language: {language}
+
+    Documentation Content:
+    {combined_docs}
+
+    Please provide:
+    1. Executive Summary
+    2. Table of Contents
+    3. Key Features and Components
+    4. Quick Start Guide
+    5. Architecture Overview
+
+    Format the response in clear, well-structured Markdown.
+    """
+
+    return call_llm(prompt, max_tokens=2000)
+
+
+def list_available_models():
+    """List all available Gemini models"""
+    try:
+        api_key = os.getenv("GEMINI_API_KEY")
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY environment variable is required")
+
+        genai.configure(api_key=api_key)
+
+        print("Available Gemini models:")
+        for model in genai.list_models():
+            if "generateContent" in model.supported_generation_methods:
+                print(f"  - {model.name}")
+
+    except Exception as e:
+        print(f"Error listing models: {e}")
+
 
 if __name__ == "__main__":
-    test_prompt = "Hello, how are you?"
+    # List available models first
+    print("Listing available models...")
+    list_available_models()
+    print("\n" + "=" * 50 + "\n")
 
-    # First call - should hit the API
-    print("Making call...")
-    response1 = call_llm(test_prompt, use_cache=False)
-    print(f"Response: {response1}")
+    # Test the LLM connection
+    try:
+        print("Testing LLM connection...")
+        response = test_llm_connection()
+        print(f"✅ Success: {response}")
+    except Exception as e:
+        print(f"❌ Failed: {e}")
+        print("\nPlease make sure:")
+        print("1. You have set the GEMINI_API_KEY environment variable")
+        print("2. Your API key is valid")
+        print("3. You have internet connection")
