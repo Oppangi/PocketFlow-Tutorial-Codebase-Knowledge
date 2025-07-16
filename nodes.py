@@ -67,7 +67,7 @@ class FetchRepo(Node):
                 include_patterns=prep_res["include_patterns"],
                 exclude_patterns=prep_res["exclude_patterns"],
                 max_file_size=prep_res["max_file_size"],
-                use_relative_paths=prep_res["use_relative_paths"]
+                use_relative_paths=prep_res["use_relative_paths"],
             )
 
         # Convert dict to list of tuples: [(path, content), ...]
@@ -87,7 +87,9 @@ class IdentifyAbstractions(Node):
         project_name = shared["project_name"]  # Get project name
         language = shared.get("language", "english")  # Get language
         use_cache = shared.get("use_cache", True)  # Get use_cache flag, default to True
-        max_abstraction_num = shared.get("max_abstraction_num", 10)  # Get max_abstraction_num, default to 10
+        max_abstraction_num = shared.get(
+            "max_abstraction_num", 10
+        )  # Get max_abstraction_num, default to 10
 
         # Helper to create context from files, respecting limits (basic example)
         def create_llm_context(files_data):
@@ -173,7 +175,9 @@ Format the output as a YAML list of dictionaries:
     - 5 # path/to/another.js
 # ... up to {max_abstraction_num} abstractions
 ```"""
-        response = call_llm(prompt, use_cache=(use_cache and self.cur_retry == 0))  # Use cache only if enabled and not retrying
+        response = call_llm(
+            prompt, use_cache=(use_cache and self.cur_retry == 0)
+        )  # Use cache only if enabled and not retrying
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
@@ -280,7 +284,7 @@ class AnalyzeRelationships(Node):
         return (
             context,
             "\n".join(abstraction_info_for_prompt),
-            num_abstractions, # Pass the actual count
+            num_abstractions,  # Pass the actual count
             project_name,
             language,
             use_cache,
@@ -290,11 +294,11 @@ class AnalyzeRelationships(Node):
         (
             context,
             abstraction_listing,
-            num_abstractions, # Receive the actual count
+            num_abstractions,  # Receive the actual count
             project_name,
             language,
             use_cache,
-         ) = prep_res  # Unpack use_cache
+        ) = prep_res  # Unpack use_cache
         print(f"Analyzing relationships using LLM...")
 
         # Add language instruction and hints only if not English
@@ -344,7 +348,9 @@ relationships:
 
 Now, provide the YAML output:
 """
-        response = call_llm(prompt, use_cache=(use_cache and self.cur_retry == 0)) # Use cache only if enabled and not retrying
+        response = call_llm(
+            prompt, use_cache=(use_cache and self.cur_retry == 0)
+        )  # Use cache only if enabled and not retrying
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
@@ -383,7 +389,7 @@ Now, provide the YAML output:
                     0 <= from_idx < num_abstractions and 0 <= to_idx < num_abstractions
                 ):
                     raise ValueError(
-                        f"Invalid index in relationship: from={from_idx}, to={to_idx}. Max index is {num_abstractions-1}."
+                        f"Invalid index in relationship: from={from_idx}, to={to_idx}. Max index is {num_abstractions - 1}."
                     )
                 validated_relationships.append(
                     {
@@ -486,7 +492,9 @@ Output the ordered list of abstraction indices, including the name in a comment 
 
 Now, provide the YAML output:
 """
-        response = call_llm(prompt, use_cache=(use_cache and self.cur_retry == 0)) # Use cache only if enabled and not retrying
+        response = call_llm(
+            prompt, use_cache=(use_cache and self.cur_retry == 0)
+        )  # Use cache only if enabled and not retrying
 
         # --- Validation ---
         yaml_str = response.strip().split("```yaml")[1].split("```")[0].strip()
@@ -508,7 +516,7 @@ Now, provide the YAML output:
 
                 if not (0 <= idx < num_abstractions):
                     raise ValueError(
-                        f"Invalid index {idx} in ordered list. Max index is {num_abstractions-1}."
+                        f"Invalid index {idx} in ordered list. Max index is {num_abstractions - 1}."
                     )
                 if idx in seen_indices:
                     raise ValueError(f"Duplicate index {idx} found in ordered list.")
@@ -548,9 +556,7 @@ class WriteChapters(BatchNode):
         # Get already written chapters to provide context
         # We store them temporarily during the batch run, not in shared memory yet
         # The 'previous_chapters_summary' will be built progressively in the exec context
-        self.chapters_written_so_far = (
-            []
-        )  # Use instance variable for temporary storage across exec calls
+        self.chapters_written_so_far = []  # Use instance variable for temporary storage across exec calls
 
         # Create a complete list of all chapters
         all_chapters = []
@@ -565,7 +571,7 @@ class WriteChapters(BatchNode):
                 safe_name = "".join(
                     c if c.isalnum() else "_" for c in chapter_name
                 ).lower()
-                filename = f"{i+1:02d}_{safe_name}.md"
+                filename = f"{i + 1:02d}_{safe_name}.md"
                 # Format with link (using potentially translated name)
                 all_chapters.append(f"{chapter_num}. [{chapter_name}]({filename})")
                 # Store mapping of chapter index to filename for linking
@@ -615,7 +621,7 @@ class WriteChapters(BatchNode):
                         "prev_chapter": prev_chapter,  # Add previous chapter info (uses potentially translated name)
                         "next_chapter": next_chapter,  # Add next chapter info (uses potentially translated name)
                         "language": language,  # Add language for multi-language support
-                        "use_cache": use_cache, # Pass use_cache flag
+                        "use_cache": use_cache,  # Pass use_cache flag
                         # previous_chapters_summary will be added dynamically in exec
                     }
                 )
@@ -638,7 +644,7 @@ class WriteChapters(BatchNode):
         chapter_num = item["chapter_num"]
         project_name = item.get("project_name")
         language = item.get("language", "english")
-        use_cache = item.get("use_cache", True) # Read use_cache from item
+        use_cache = item.get("use_cache", True)  # Read use_cache from item
         print(f"Writing chapter {chapter_num} for: {abstraction_name} using LLM...")
 
         # Prepare file context string from the map
@@ -723,7 +729,9 @@ Instructions for the chapter (Generate content in {language.capitalize()} unless
 
 Now, directly provide a super beginner-friendly Markdown output (DON'T need ```markdown``` tags):
 """
-        chapter_content = call_llm(prompt, use_cache=(use_cache and self.cur_retry == 0)) # Use cache only if enabled and not retrying
+        chapter_content = call_llm(
+            prompt, use_cache=(use_cache and self.cur_retry == 0)
+        )  # Use cache only if enabled and not retrying
         # Basic validation/cleanup
         actual_heading = f"# Chapter {chapter_num}: {abstraction_name}"  # Use potentially translated name
         if not chapter_content.strip().startswith(f"# Chapter {chapter_num}"):
@@ -825,8 +833,8 @@ class CombineTutorial(Node):
                 safe_name = "".join(
                     c if c.isalnum() else "_" for c in abstraction_name
                 ).lower()
-                filename = f"{i+1:02d}_{safe_name}.md"
-                index_content += f"{i+1}. [{abstraction_name}]({filename})\n"  # Use potentially translated name in link text
+                filename = f"{i + 1:02d}_{safe_name}.md"
+                index_content += f"{i + 1}. [{abstraction_name}]({filename})\n"  # Use potentially translated name in link text
 
                 # Add attribution to chapter content (using English fixed string)
                 chapter_content = chapters_content[i]  # Potentially translated content
