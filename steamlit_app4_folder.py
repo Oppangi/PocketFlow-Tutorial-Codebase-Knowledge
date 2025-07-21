@@ -895,17 +895,8 @@ def check_llm_setup():
 
 
 def format_duration(seconds):
-    """Format duration in a human-readable way"""
-    if seconds < 60:
-        return f"{seconds:.1f} seconds"
-    elif seconds < 3600:
-        minutes = seconds // 60
-        remaining_seconds = seconds % 60
-        return f"{int(minutes)} minutes {remaining_seconds:.1f} seconds"
-    else:
-        hours = seconds // 3600
-        remaining_minutes = (seconds % 3600) // 60
-        return f"{int(hours)} hours {int(remaining_minutes)} minutes"
+    """Format duration in seconds only"""
+    return f"{seconds:.1f}s"
 
 
 def clone_repository(repo_url, temp_dir):
@@ -1012,7 +1003,7 @@ def find_project_root(extracted_path):
                 score += 5
 
         # Check for code files in root
-        code_extensions = [".py", ".js", ".java", ".cpp", ".go", ".rs", ".php", ".rb"]
+        code_extensions = [".py", ".js", ".java", ".cpp", ".go", ".rs", ".php", ".rb",]
         for file in files:
             if any(file.endswith(ext) for ext in code_extensions):
                 score += 1
@@ -1332,7 +1323,7 @@ def main():
             help="Choose how many files you want to process. More files = longer processing time but more complete documentation.",
         )
 
-        # Show estimated processing time
+        # Show estimated processing time (simplified)
         estimated_time_per_file = 15  # seconds per file (rough estimate)
         estimated_total_time = max_files_to_process * estimated_time_per_file
         st.info(
